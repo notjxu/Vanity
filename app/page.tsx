@@ -1,22 +1,7 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { ShoppingBag, Menu, X, Plus, Minus, ChevronRight } from "lucide-react";
+'use client';
 
-// ---------------------------------------------------------------------------
-// Motion system — applying a handful of concrete rules from the referenced
-// design-intelligence skill's GSAP/motion catalog, reimplemented in plain
-// CSS + IntersectionObserver (no GSAP dependency available in this runtime):
-//   spring-physics        → cubic-bezier(0.16,1,0.3,1) ("easeOutExpo"-ish,
-//                            no linear/default-ease anywhere)
-//   stagger-sequence       → grid/list items reveal 40ms apart, not at once
-//   exit-faster-than-enter → drawers close in ~65% of their open duration
-//   scale-feedback         → 0.95 press-scale on every tappable control
-//   parallax-subtle        → hero backdrop only, disabled under reduced motion
-//   interruptible /
-//   no-blocking-animation  → everything is a declarative CSS transition on
-//                            state, so re-toggling mid-animation just retargets
-//                            it — nothing is a blocking JS-driven sequence
-//   reduced-motion         → respected globally, not just on one component
-// ---------------------------------------------------------------------------
+import { useState, useMemo, useRef, useEffect } from "react";
+import { ShoppingBag, Menu, X, Plus, Minus, ChevronRight } from "lucide-react";
 
 const FONTS = `
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&display=swap');
@@ -49,21 +34,20 @@ html { scroll-behavior: smooth; }
 }
 `;
 
-function usePrefersReducedMotion() {
+function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     setReduced(mq.matches);
-    const handler = (e) => setReduced(e.matches);
+    const handler = (e: MediaQueryListEvent) => setReduced(e.matches);
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, []);
   return reduced;
 }
 
-// Reveals an element once it scrolls into view; stagger via `delayMs`.
 function useReveal(delayMs = 0) {
-  const ref = useRef(null);
+  const ref = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(false);
   const reducedMotion = usePrefersReducedMotion();
 
@@ -94,15 +78,13 @@ function useReveal(delayMs = 0) {
   };
 }
 
-// Subtle vertical parallax on scroll — hero backdrop only, capped, and fully
-// disabled under reduced motion rather than just slowed down.
 function useParallax(factor = 0.15) {
-  const ref = useRef(null);
+  const ref = useRef<HTMLDivElement>(null);
   const reducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     if (reducedMotion) return;
-    let raf = null;
+    let raf: number | null = null;
     const onScroll = () => {
       if (raf) return;
       raf = requestAnimationFrame(() => {
@@ -123,7 +105,24 @@ function useParallax(factor = 0.15) {
   return ref;
 }
 
-const PRODUCTS = [
+interface Product {
+  id: string;
+  name: string;
+  price: number;
+  sizes: string[];
+  colors: string[];
+  blurb: string;
+}
+
+interface CartItem {
+  id: string;
+  name: string;
+  price: number;
+  size: string;
+  qty: number;
+}
+
+const PRODUCTS: Product[] = [
   {
     id: "p1",
     name: "Requiem Compression Tee",
@@ -158,9 +157,7 @@ const PRODUCTS = [
   },
 ];
 
-// Abstract thorn/vein linework — an original decorative motif, not a copy of
-// any specific artwork. Used as the "hidden until it catches light" signature.
-function ThornPattern({ id, className }) {
+function ThornPattern({ id, className }: { id: string; className?: string }) {
   return (
     <svg viewBox="0 0 200 260" className={className} preserveAspectRatio="xMidYMid slice">
       <defs>
@@ -179,22 +176,20 @@ function ThornPattern({ id, className }) {
   );
 }
 
-function ProductCard({ product, index, onSelect }) {
-  const reveal = useReveal(index * 40); // stagger-sequence: 40ms per item
+function ProductCard({ product, index, onSelect }: { product: Product; index: number; onSelect: (p: Product) => void }) {
+  const reveal = useReveal(index * 40);
   return (
     <button
-      ref={reveal.ref}
+      ref={reveal.ref as any}
       className={`${reveal.className} group text-left w-full focus:outline-none active:scale-[0.98] transition-transform`}
       style={reveal.style}
       onClick={() => onSelect(product)}
     >
       <div className="relative aspect-[3/4] bg-neutral-900 border border-neutral-800 overflow-hidden group-focus-visible:ring-2 group-focus-visible:ring-white">
-        {/* base (resting) layer — faint, low-contrast */}
         <ThornPattern
           id={product.id}
           className="absolute inset-0 w-full h-full text-neutral-700 opacity-40 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none group-hover:opacity-0 scale-100"
         />
-        {/* resolved layer — sharp, revealed on hover/focus */}
         <ThornPattern
           id={`${product.id}-hi`}
           className="absolute inset-0 w-full h-full text-white opacity-0 transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none group-hover:opacity-100 group-hover:scale-[1.04] group-focus-visible:opacity-100 scale-100"
@@ -216,11 +211,10 @@ function ProductCard({ product, index, onSelect }) {
   );
 }
 
-function ProductPanel({ product, onClose, onAdd }) {
-  const [size, setSize] = useState(null);
+function ProductPanel({ product, onClose, onAdd }: { product: Product | null; onClose: () => void; onAdd: (p: Product, size: string) => void }) {
+  const [size, setSize] = useState<string | null>(null);
   const open = !!product;
 
-  // reset size choice whenever a new product opens
   useEffect(() => {
     setSize(null);
   }, [product]);
@@ -236,7 +230,6 @@ function ProductPanel({ product, onClose, onAdd }) {
         style={{
           transitionProperty: "transform",
           transitionTimingFunction: "cubic-bezier(0.16,1,0.3,1)",
-          // exit-faster-than-enter: closing runs at ~65% of the opening duration
           transitionDuration: open ? "420ms" : "270ms",
           transform: open ? "translateX(0)" : "translateX(100%)",
         }}
@@ -282,8 +275,10 @@ function ProductPanel({ product, onClose, onAdd }) {
               <button
                 disabled={!size}
                 onClick={() => {
-                  onAdd(product, size);
-                  onClose();
+                  if (size) {
+                    onAdd(product, size);
+                    onClose();
+                  }
                 }}
                 className="w-full py-3.5 font-body text-sm tracking-widest uppercase transition-all duration-200 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-white
                   disabled:bg-neutral-800 disabled:text-neutral-500 disabled:cursor-not-allowed disabled:active:scale-100
@@ -299,7 +294,7 @@ function ProductPanel({ product, onClose, onAdd }) {
   );
 }
 
-function CartDrawer({ items, open, onClose, onQty }) {
+function CartDrawer({ items, open, onClose, onQty }: { items: CartItem[]; open: boolean; onClose: () => void; onQty: (idx: number, delta: number) => void }) {
   const subtotal = useMemo(
     () => items.reduce((sum, i) => sum + i.price * i.qty, 0),
     [items]
@@ -315,7 +310,7 @@ function CartDrawer({ items, open, onClose, onQty }) {
         style={{
           transitionProperty: "transform",
           transitionTimingFunction: "cubic-bezier(0.16,1,0.3,1)",
-          transitionDuration: open ? "420ms" : "270ms", // exit-faster-than-enter
+          transitionDuration: open ? "420ms" : "270ms",
           transform: open ? "translateX(0)" : "translateX(100%)",
         }}
       >
@@ -385,12 +380,12 @@ function CartDrawer({ items, open, onClose, onQty }) {
 export default function VanityStorefront() {
   const [navOpen, setNavOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
-  const [selected, setSelected] = useState(null);
-  const [cart, setCart] = useState([]);
+  const [selected, setSelected] = useState<Product | null>(null);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const parallaxRef = useParallax(0.12);
   const sectionReveal = useReveal(0);
 
-  const addToCart = (product, size) => {
+  const addToCart = (product: Product, size: string) => {
     setCart((prev) => {
       const existing = prev.findIndex((i) => i.id === product.id && i.size === size);
       if (existing >= 0) {
@@ -403,7 +398,7 @@ export default function VanityStorefront() {
     setCartOpen(true);
   };
 
-  const changeQty = (idx, delta) => {
+  const changeQty = (idx: number, delta: number) => {
     setCart((prev) =>
       prev
         .map((item, i) => (i === idx ? { ...item, qty: item.qty + delta } : item))
@@ -465,7 +460,6 @@ export default function VanityStorefront() {
           id="hero"
           className="absolute -right-24 top-0 h-full w-[65%] text-neutral-900 opacity-70 pointer-events-none will-change-transform"
         />
-        {/* parallax-subtle: drifts slower than scroll, capped, off under reduced motion */}
         <div ref={parallaxRef} className="absolute -right-24 top-0 h-[130%] w-[65%] pointer-events-none will-change-transform">
           <ThornPattern id="hero-parallax" className="h-full w-full text-neutral-800 opacity-40" />
         </div>
@@ -504,7 +498,7 @@ export default function VanityStorefront() {
       {/* Product grid */}
       <section id="shop" className="max-w-6xl mx-auto px-5 py-16 md:py-24">
         <div
-          ref={sectionReveal.ref}
+          ref={sectionReveal.ref as any}
           className={`${sectionReveal.className} flex items-end justify-between mb-10`}
           style={sectionReveal.style}
         >
